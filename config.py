@@ -1,37 +1,40 @@
-"""Central configuration for Polly backtests."""
+"""Central configuration for Polly."""
 
 # --- Crypto Mean-Reversion Config ---
 CRYPTO_CONFIG = {
     "symbol": "BTCUSDT",
-    "interval": "1h",
-    "lookback_days": 180,
-    "rolling_window": 24,        # hours for rolling mean
-    "ewma_span": 12,             # EWMA span in hours
-    "deviation_threshold": 0.02, # 2% deviation from fair value to trigger entry
-    "reversion_target": 0.005,   # 0.5% reversion profit target
-    "stop_loss": 0.015,          # 1.5% stop loss
-    "position_size_pct": 0.10,   # 10% of capital per trade
+    "interval": "1d",              # Daily candles → 720 days (~2 years) from Kraken
+    "lookback_days": 720,
+    "rolling_window": 20,          # 20-day rolling mean
+    "ewma_span": 10,               # 10-day EWMA
+    "deviation_threshold": 0.04,   # 4% deviation (daily moves are larger)
+    "reversion_target": 0.02,      # 2% reversion target
+    "stop_loss": 0.03,             # 3% stop loss
+    "position_size_pct": 0.10,
     "initial_capital": 10_000,
 }
 
-# --- Polymarket Divergence Config ---
+# --- Polymarket Live Scanner Config ---
 POLY_CONFIG = {
     "btc_symbol": "BTCUSDT",
     "interval": "1h",
-    "lookback_days": 180,
     "initial_capital": 10_000,
 
-    # 3-condition entry filter
-    "min_price_deviation_pct": 0.03,   # BTC must deviate 3%+ from EWMA
-    "min_poly_divergence": 0.15,       # Polymarket implied prob must diverge 15%+ from model
-    "min_volume_ratio": 1.5,           # Volume must be 1.5x the rolling average
+    # Model parameters
+    "ewma_span": 24,
+
+    # Entry filter thresholds
+    "min_price_deviation_pct": 0.03,
+    "min_poly_divergence": 0.10,   # Lowered from 15% → 10% to catch more signals
+    "min_volume_ratio": 1.3,       # Lowered from 1.5x → 1.3x
 
     # Position sizing (fractional Kelly)
-    "kelly_fraction": 0.25,            # Quarter-Kelly for safety
-    "max_position_pct": 0.20,          # Cap at 20% of capital per bet
-    "min_edge": 0.05,                  # Minimum edge required to enter
+    "kelly_fraction": 0.25,
+    "max_position_pct": 0.20,
+    "min_edge": 0.05,
 
-    # Synthetic data seed (replace with real Polymarket API data)
-    "use_synthetic_data": True,
-    "synthetic_seed": 42,
+    # Live scanner settings
+    "scan_interval_seconds": 300,  # Check every 5 minutes
+    "log_file": "results/live_signals.csv",
+    "keywords": ["btc", "bitcoin"],  # Market title keywords to watch
 }

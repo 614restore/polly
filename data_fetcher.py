@@ -51,14 +51,17 @@ def fetch_binance_ohlcv(symbol: str, interval: str, lookback_days: int) -> pd.Da
             break
 
         all_candles.extend(candles)
-        last_ts = candles[-1][0]
 
-        # Kraken "last" is the cursor for pagination
+        # Kraken "last" cursor points to the next page's start timestamp
         next_since = int(result["last"])
-        if next_since <= since or len(candles) < KRAKEN_MAX_CANDLES:
+        end_ts = int(datetime.utcnow().timestamp())
+
+        # Stop if we've caught up to now or made no progress
+        if next_since >= end_ts or next_since <= since:
             break
+
         since = next_since
-        time.sleep(0.5)  # respect rate limits
+        time.sleep(1.0)  # Kraken rate limit: 1 req/sec for public endpoints
 
     if not all_candles:
         raise RuntimeError("No data returned from Kraken.")

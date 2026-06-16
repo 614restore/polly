@@ -182,6 +182,53 @@ def evaluate_signal(market: dict, model_prob: float, price_dev: float, vol_ratio
 
 
 # ---------------------------------------------------------------------------
+# Trade alert formatter
+# ---------------------------------------------------------------------------
+
+def format_trade_alert(result: dict, capital: float = 10_000) -> str:
+    cfg = POLY_CONFIG
+    direction = result["direction"]
+    model_p   = result["model_prob"]
+    implied_p = result["implied_prob"]
+    edge      = result["edge"]
+
+    # Fractional Kelly sizing
+    win_prob = model_p if direction == "up" else 1 - model_p
+    b = win_prob / max(1 - win_prob, 1e-9)
+    k = max(0.0, (b * win_prob - (1 - win_prob)) / b)
+    bet_pct   = min(k * cfg["kelly_fraction"], cfg["max_position_pct"])
+    bet_size  = round(capital * bet_pct, 2)
+
+    # What to buy: betting YES if direction==up, NO if direction==down
+    buy_side  = "YES" if direction == "up" else "NO"
+    buy_price = implied_p if direction == "up" else round(1 - implied_p, 4)
+    max_price = round(buy_price * 1.02, 4)  # 2% slippage tolerance
+
+    lines = [
+        "",
+        "┌─────────────────────────────────────────────────────┐",
+        "│                ⚡  SIGNAL FIRED  ⚡                  │",
+        "├─────────────────────────────────────────────────────┤",
+        f"│  Market   : {result['question'][:50]:<50} │" if len(result['question']) <= 50
+            else f"│  Market   : {result['question'][:50]:<50} │",
+        f"│  Market(2): {result['question'][50:100]:<50} │" if len(result['question']) > 50 else None,
+        "├─────────────────────────────────────────────────────┤",
+        f"│  ACTION   : BUY {buy_side:<4}  @ ${buy_price:.4f}  (max ${max_price:.4f})     │",
+        f"│  BET SIZE : ${bet_size:,.2f}  ({bet_pct*100:.1f}% of capital)           │",
+        f"│  SHARES   : ~{bet_size / max(buy_price, 0.01):,.0f} contracts                          │",
+        "├─────────────────────────────────────────────────────┤",
+        f"│  Model prob : {model_p:.3f}   Market implied: {implied_p:.3f}          │",
+        f"│  Edge       : {edge:.3f}   Kelly fraction: {cfg['kelly_fraction']}               │",
+        f"│  BTC dev    : {result['price_deviation']:.3f}   Vol ratio    : {result['volume_ratio']:.2f}              │",
+        "├─────────────────────────────────────────────────────┤",
+        f"│  PAYOUT   : Win = +${bet_size:,.2f}  |  Loss = -${bet_size:,.2f}   │",
+        f"│  Timestamp: {result['timestamp'][:19]:<38}  │",
+        "└─────────────────────────────────────────────────────┘",
+    ]
+    return "\n".join(l for l in lines if l is not None)
+
+
+# ---------------------------------------------------------------------------
 # CSV logger
 # ---------------------------------------------------------------------------
 
@@ -245,11 +292,7 @@ def run_scan(verbose: bool = True) -> list[dict]:
 
         if result["signal"]:
             fired.append(result)
-            print(f"\n  *** SIGNAL FIRED ***")
-            print(f"  Market:    {result['question']}")
-            print(f"  Direction: BET {result['direction'].upper()}")
-            print(f"  Model: {result['model_prob']:.3f} vs Market: {result['implied_prob']:.3f} (edge: {result['edge']:.3f})")
-            print(f"  All conditions met: price_dev={result['cond_price_dev']} divergence={result['cond_divergence']} volume={result['cond_volume']}")
+            print(format_trade_alert(result, capital=cfg["initial_capital"]))
         elif verbose:
             print(f"  {result['question'][:60]} → model:{result['model_prob']:.3f} mkt:{result['implied_prob']:.3f} edge:{result['edge']:.3f} [{'SIGNAL' if result['signal'] else 'no signal'}]")
 

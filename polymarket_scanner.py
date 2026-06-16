@@ -182,6 +182,29 @@ def evaluate_signal(market: dict, model_prob: float, price_dev: float, vol_ratio
 
 
 # ---------------------------------------------------------------------------
+# macOS notification
+# ---------------------------------------------------------------------------
+
+def _notify(result: dict):
+    """Send a macOS notification banner when a signal fires."""
+    import subprocess
+    direction = result["direction"].upper()
+    edge = result["edge"]
+    question = result["question"][:60].replace('"', "'")
+    subtitle = f"BET {direction} | Edge {edge:.3f}"
+    script = (
+        f'display notification "{question}" '
+        f'with title "⚡ Polly Signal Fired" '
+        f'subtitle "{subtitle}" '
+        f'sound name "Glass"'
+    )
+    try:
+        subprocess.run(["osascript", "-e", script], check=False, timeout=5)
+    except Exception:
+        pass  # Never let notification failure crash the scanner
+
+
+# ---------------------------------------------------------------------------
 # Trade alert formatter
 # ---------------------------------------------------------------------------
 
@@ -293,6 +316,7 @@ def run_scan(verbose: bool = True) -> list[dict]:
         if result["signal"]:
             fired.append(result)
             print(format_trade_alert(result, capital=cfg["initial_capital"]))
+            _notify(result)
         elif verbose:
             print(f"  {result['question'][:60]} → model:{result['model_prob']:.3f} mkt:{result['implied_prob']:.3f} edge:{result['edge']:.3f} [{'SIGNAL' if result['signal'] else 'no signal'}]")
 

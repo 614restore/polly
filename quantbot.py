@@ -142,9 +142,12 @@ class QuantBot:
             df = self._get_btc_data()
             price = df["close"].iloc[-1]
             cfg = self.crypto_cfg
+            w = cfg["rolling_window"]
+            span = cfg["ewma_span"]
 
-            from run_backtest import compute_fair_value
-            fv = compute_fair_value(df.tail(cfg["rolling_window"] * 2), cfg["rolling_window"], cfg["ewma_span"]).iloc[-1]
+            rolling_mean = df["close"].rolling(w).mean().iloc[-1]
+            ewma = df["close"].ewm(span=span, adjust=False).mean().iloc[-1]
+            fv = (rolling_mean + ewma) / 2
             deviation = (price - fv) / fv
 
             logger.info(f"BTC: ${price:,.2f} | Fair value: ${fv:,.2f} | Deviation: {deviation:.4f}")

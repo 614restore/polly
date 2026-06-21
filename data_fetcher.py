@@ -1,80 +1,60 @@
-"""Fetch OHLCV data from Kraken public API (no keys required, US-accessible)."""
+"""Fetch OHLCV data via yfinance (Yahoo Finance — fast, no keys, US-accessible)."""
 
-import requests
 import pandas as pd
-from datetime import datetime, timedelta
-import time
+import yfinance as yf
 
-# Kraken interval codes (minutes)
-KRAKEN_INTERVALS = {
-    "1m": 1, "5m": 5, "15m": 15, "30m": 30,
-    "1h": 60, "4h": 240, "1d": 1440,
+SYMBOL_MAP = {
+    "BTCUSDT": "BTC-USD",
+    "ETHUSDT": "ETH-USD",
+    "SOLUSDT": "SOL-USD",
+    "BTCUSD":  "BTC-USD",
+    "BTC":     "BTC-USD",
 }
 
-# Kraken returns max 720 candles per call
-KRAKEN_MAX_CANDLES = 720
+INTERVAL_MAP = {
+    "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
+    "1h": "1h", "4h": "1h",  # yfinance has no 4h; use 1h
+    "1d": "1d",
+}
+
+# yfinance max lookback per interval
+MAX_LOOKBACK = {
+    "1m": 7, "5m": 60, "15m": 60, "30m": 60,
+    "1h": 730, "1d": 3650,
+}
 
 
 def fetch_binance_ohlcv(symbol: str, interval: str, lookback_days: int) -> pd.DataFrame:
-    """Fetch historical OHLCV from Kraken (drop-in replacement, symbol auto-mapped)."""
-    # Map common symbol names to Kraken pairs
-    symbol_map = {
-        "BTCUSDT": "XBTUSD",
-        "ETHUSDT": "ETHUSD",
-        "SOLUSDT": "SOLUSD",
-        "BTCUSD": "XBTUSD",
-    }
-    kraken_pair = symbol_map.get(symbol.upper(), symbol)
-    interval_min = KRAKEN_INTERVALS.get(interval, 60)
+    """Fetch OHLCV from Yahoo Finance. Fast, reliable, no rate limits."""
+    yf_symbol  = SYMBOL_MAP.get(symbol.upper(), symbol)
+    yf_interval = INTERVAL_MAP.get(interval, "1h")
+    max_days   = MAX_LOOKBACK.get(yf_interval, 730)
+    days       = min(lookback_days, max_days)
 
-    start_ts = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
-    url = "https://api.kraken.com/0/public/OHLC"
+    print(f"Fetching {yf_symbol} {yf_interval} data for last {days} days (Yahoo Finance)...", flush=True)
 
-    all_candles = []
-    since = start_ts
+    df = yf.download(
+        yf_symbol,
+        period=f"{days}d",
+        interval=yf_interval,
+        progress=False,
+        auto_adjust=True,
+    )
 
-    print(f"Fetching {kraken_pair} {interval} data for last {lookback_days} days (Kraken)...")
-    while True:
-        params = {"pair": kraken_pair, "interval": interval_min, "since": since}
-        resp = requests.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
+    if df.empty:
+        raise RuntimeError(f"No data returned for {yf_symbol}")
 
-        if data.get("error"):
-            raise RuntimeError(f"Kraken API error: {data['error']}")
+    # Flatten MultiIndex columns if present
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
 
-        result = data["result"]
-        pair_key = [k for k in result if k != "last"][0]
-        candles = result[pair_key]
-
-        if not candles:
-            break
-
-        all_candles.extend(candles)
-
-        # Kraken "last" cursor points to the next page's start timestamp
-        next_since = int(result["last"])
-        end_ts = int(datetime.utcnow().timestamp())
-
-        # Stop if we've caught up to now or made no progress
-        if next_since >= end_ts or next_since <= since:
-            break
-
-        since = next_since
-        time.sleep(1.0)  # Kraken rate limit: 1 req/sec for public endpoints
-
-    if not all_candles:
-        raise RuntimeError("No data returned from Kraken.")
-
-    df = pd.DataFrame(all_candles, columns=[
-        "timestamp", "open", "high", "low", "close", "vwap", "volume", "trades"
-    ])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
-    df.set_index("timestamp", inplace=True)
-    for col in ["open", "high", "low", "close", "volume"]:
-        df[col] = df[col].astype(float)
-    df = df[["open", "high", "low", "close", "volume"]]
+    df = df.rename(columns={"Open": "open", "High": "high", "Low": "low",
+                             "Close": "close", "Volume": "volume"})
+    df = df[["open", "high", "low", "close", "volume"]].copy()
+    df.index.name = "timestamp"
     df = df[~df.index.duplicated(keep="last")]
     df.sort_index(inplace=True)
-    print(f"  Fetched {len(df)} candles.")
+    df.dropna(inplace=True)
+
+    print(f"  Fetched {len(df)} candles. Latest close: ${df['close'].iloc[-1]:,.2f}", flush=True)
     return df
